@@ -539,27 +539,31 @@ from (
 ## 9. Project Structure and How to Run
 
 ```
-food-delivery-sql-analysis/
-├── README.md
-├── sql/
-│   ├── 01_schema.sql              # create database and tables
-│   ├── 02_data.sql                # insert sample data
-│   ├── 03_analysis_queries.sql    # all analysis queries 
-├── screenshots/
-│   ├── er_diagram.png
-│   ├── validation_result.png
-│   └── (query result screenshots)
+Project-1/
+├── README.md                  # project documentation
+├── er_diagram.png             # database ER diagram
+├── Schema.sql                 # creates the database and tables
+├── Data.sql                   # inserts the sample data
+├── analysis_queries.sql       # all analysis queries 
+└── screenshots/               # screenshots of query results
 ```
+
+| File | Purpose |
+|---|---|
+| `schema.sql` | Creates the `analysis` database and the five tables in dependency order (customers, restaurants, orders, order_items, payments) |
+| `data.sql` | Loads the sample data: 15 customers, 8 restaurants, 30 orders, 37 order items, 27 payments |
+| `analysis_queries.sql` | Validation check and all business queries, grouped by topic |
+| `er_diagram.png` | ER diagram exported from MySQL Workbench |
+| `screenshots/` | Result screenshots for the key queries |
 
 **To run**
 1. Open MySQL Workbench (MySQL 8.0 or later is required for CTEs and window functions).
-2. Run `01_schema.sql`, which creates the `analysis` database and tables in dependency order (customers, restaurants, orders, order_items, payments).
-3. Run `02_data.sql` to load the sample data. Expected row counts: 15, 8, 30, 37 and 27.
-4. Run the validation query (section 5) and confirm it returns 0.
-5. Run the queries in `03_analysis_queries.sql` one at a time and compare with the results above.
+2. Run `schema.sql`.
+3. Run `data.sql`. Expected row counts: 15, 8, 30, 37 and 27.
+4. Run the validation query from section 5 and confirm it returns `0`.
+5. Run the queries in `analysis_queries.sql` one at a time and compare the output with the results in this README.
 
 ---
-
 ## 10. Next Steps
 
 **Still to add**
