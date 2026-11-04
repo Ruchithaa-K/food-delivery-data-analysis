@@ -232,6 +232,21 @@ where o.order_status='Delivered'
 window w as (partition by o.customer_id order by o.order_date,o.order_id)
 order by o.customer_id, order_sequence;
 
+-- order amount against the restaurant’s average
+select 
+	o.order_id,
+    o.restaurant_id,
+    r.restaurant_name,
+    p.amount as order_amount,
+    round(avg(p.amount) over w,2) as restaurant_average,
+    if(p.amount>(avg(p.amount) over w) ,'Yes','No') as above_average
+from orders o
+inner join payments p on o.order_id=p.order_id
+inner join restaurants r on o.restaurant_id=r.restaurant_id
+window w as (partition by o.restaurant_id)
+order by restaurant_average desc ,restaurant_name;
+
+
     
 
 
