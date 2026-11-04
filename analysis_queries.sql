@@ -208,6 +208,24 @@ inner join payments p on o.order_id=p.order_id
 group by date_format(o.order_date,'%Y-%m')
 ) as revenue_table;
 
+-- Cumulative (running) revenue by date
+select 
+	o.order_date, 
+    sum(p.amount) as each_day_revenue, -- one day has multiple orders,so we need to sum up them
+	sum(sum(p.amount)) over(order by date(o.order_date)) as running_revenue
+from payments p
+inner join orders o on p.order_id=o.order_id
+group by o.order_date;
+
+
+    
+
+
+
+
+
+
+
 
 
 
