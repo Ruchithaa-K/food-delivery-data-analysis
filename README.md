@@ -1,6 +1,5 @@
 # Food Delivery Business Analysis using SQL
 
-
 > Analyzed a food delivery database in MySQL to uncover revenue trends, customer ordering patterns and top-performing restaurants, using JOINs, aggregate functions, GROUP BY, subqueries, CTEs and window functions.
 
 ---
@@ -14,8 +13,8 @@
 5. [Data Validation](#5-data-validation)
 6. [Business Questions, Queries and Insights](#6-business-questions-queries-and-insights)
    - [A. Core business metrics](#a-core-business-metrics)
-   - [B. Restaurant and customer performance ](#b-restaurant-and-customer-performance-joins)
-   - [C. Above-Average Performers and Customer Loyalty](#c-Above-Average-Performers-and-Customer-Loyalty)
+   - [B. Restaurant and customer performance](#b-restaurant-and-customer-performance)
+   - [C. Above-Average Performers and Customer Loyalty](#c-above-average-performers-and-customer-loyalty)
    - [D. Customer segmentation](#d-customer-segmentation)
    - [E. Rankings and Trends Over Time](#e-rankings-and-trends-over-time)
 7. [Assumptions and Known Limitations](#7-assumptions-and-known-limitations)
@@ -26,15 +25,20 @@
 
 ## 1. Project Overview
 
-**Business problem:** A food delivery company wants to know where its revenue comes from, how customers behave, and which restaurants drive growth or cause problems.
+### 1.1 Business Problem
 
-**Goals**
+A food delivery company wants to know where its revenue comes from, how customers behave, and which restaurants drive growth or cause problems.
+
+### 1.2 Goals
+
 - Measure core KPIs: revenue, orders, average order value, cancellation rate.
 - Find the best and worst performing restaurants and cuisines.
 - Understand customer spending, loyalty and repeat behavior.
 - Track revenue trends month over month.
 
-**Dataset (sample data built for this project)**
+### 1.3 Dataset
+
+Sample data built for this project:
 
 | Item | Size |
 |---|---|
@@ -52,19 +56,23 @@ Patterns were built into the data on purpose: one restaurant with no orders, one
 
 ## 2. Tools and SQL Skills
 
-**Tools:** MySQL 8, MySQL Workbench (queries and ER diagram), Git and GitHub.
+### 2.1 Tools
 
-Skills
+MySQL 8, MySQL Workbench (queries and ER diagram), Git and GitHub.
 
-Aggregate functions (`SUM`, `AVG`, `COUNT`) 
-`GROUP BY` and `HAVING` 
-Multi-table `JOIN`s (inner and left) 
-`GROUP_CONCAT` 
-Subqueries (scalar, nested, derived tables) 
-CTEs (including chained CTEs) 
-`CASE` expressions and conditional aggregation 
-Window functions (`RANK`, `LAG`, `SUM() OVER`) 
-Window function over an aggregate functions
+### 2.2 SQL Skills Used
+
+- Aggregate functions (`SUM`, `AVG`, `COUNT`)
+- `GROUP BY` and `HAVING`
+- Multi-table `JOIN`s (inner and left)
+- `GROUP_CONCAT`
+- Subqueries (scalar, nested, derived tables)
+- CTEs (including chained CTEs)
+- `CASE` / `IF` expressions and conditional aggregation
+- Window functions (`RANK`, `ROW_NUMBER`, `LAG`, `AVG() OVER`, `SUM() OVER`)
+- Window functions over aggregates, such as `AVG(SUM(x)) OVER ()`
+- Named windows (`WINDOW w AS (...)`)
+- Date functions (`DATE`, `DATE_FORMAT`, `DATEDIFF`)
 
 ---
 
@@ -77,10 +85,16 @@ Window function over an aggregate functions
 5. **Revenue is concentrated in a few customers.** Four "High" customers (31% of paying customers) generate 57.8% of revenue.
 6. **About 62% of paying customers ordered again** (8 of 13), so retention is decent, but 5 customers ordered only once.
 7. **Revenue peaked in February** (2,700) and slowed from March to May. June is incomplete (data ends on 10 June).
+8. **Customers take about 43 days on average to place a second order**, and the gaps between orders tend to widen over time.
+9. **41% of orders are above their own restaurant's average and bring in about 54% of revenue.** Average order size varies almost threefold between restaurants (Biryani House 613 vs Dosa Corner 208).
 
 ---
 
 ## 4. Database Schema
+
+### 4.1 ER Diagram
+
+![ER Diagram](er_diagram.png)
 
 ```
 customers (1) ───< orders >─── (1) restaurants
@@ -88,6 +102,8 @@ customers (1) ───< orders >─── (1) restaurants
          ┌───────────┴───────────┐
      order_items (many)      payments (1 per delivered order)
 ```
+
+### 4.2 Tables
 
 | Table | Description | Key columns |
 |---|---|---|
@@ -97,7 +113,8 @@ customers (1) ───< orders >─── (1) restaurants
 | `order_items` | One row per dish in an order | `item_id` (PK), `order_id` (FK), `item_name`, `quantity`, `price` |
 | `payments` | One row per delivered order | `payment_id` (PK), `order_id` (FK), `payment_method` (upi, cash, card), `amount`, `discount` |
 
-**Relationships**
+### 4.3 Relationships
+
 - One customer places many orders. One restaurant receives many orders.
 - One order has many items and one payment (cancelled orders have no payment).
 - `orders` is the central table. Items reach their restaurant through `orders`, so the restaurant is stored once per order and not repeated on every dish (normalization).
@@ -109,6 +126,8 @@ customers (1) ───< orders >─── (1) restaurants
 ## 5. Data Validation
 
 Before analysis, I checked that the stored payment amount equals the items total minus the discount for every order.
+
+### 5.1 Query
 
 ```sql
 -- Does the sum of quantity * price minus discount equal the stored amount for every order?
@@ -123,15 +142,22 @@ from (
 ) as mismatched;
 ```
 
-**Result:** `mismatch_count = 0` (PASS).
+### 5.2 Result
 
-**How it works**
+`mismatch_count = 0` (PASS).
+
+<!-- Add screenshot: ![Validation result](screenshots/validation_result.png) -->
+
+### 5.3 How it works
+
 - `order_items` has many rows per order, so the items are summed per order (`group by o.order_id`) before comparing with the single payment row.
 - `p.amount` and `p.discount` are in the `GROUP BY` because `payments.order_id` is not declared unique, so MySQL cannot prove one value per order. This is the functional dependency rule.
 - The outer `count(*)` turns "no rows" into an explicit `0`.
 - The check was tested by changing one payment by 10, confirming the order appeared, and reverting it.
 
-**Insight:** all 27 payments reconcile with their items, so revenue figures can be trusted. Cancelled orders have items but no payment, as designed.
+### 5.4 Insight
+
+All 27 payments reconcile with their items, so revenue figures can be trusted. Cancelled orders have items but no payment, as designed.
 
 ---
 
@@ -139,9 +165,13 @@ from (
 
 Rule used throughout: **revenue counts delivered orders only.** Cancelled orders have no payment row, so joining to `payments` excludes them automatically.
 
+Each question is laid out the same way: **Query**, **Result**, **How it works** and **Insight**.
+
 ### A. Core business metrics
 
 #### Q1. What are the total revenue, delivered orders, average order value and cancellation rate?
+
+##### Query
 
 ```sql
 -- Total revenue
@@ -160,17 +190,24 @@ from orders o
 inner join payments p on o.order_id = p.order_id;
 ```
 
+##### Result
+
 | total_revenue | delivered_orders | cancellation_rate | average_order_value |
 |---|---|---|---|
 | 12,420 | 27 | 10.00 | 460.00 |
 
-**How it works**
+##### How it works
+
 - A comparison such as `order_status = 'Delivered'` returns 1 or 0, so `sum()` counts matching rows and `avg()` gives a rate.
 - The cancellation rate is calculated from `orders` (all 30 orders), because it needs cancelled orders in the denominator. Revenue and average order value come from `payments`, which only has delivered orders.
 
-**Insight:** the business earned 12,420 from 27 delivered orders (460 per order), and loses 1 in 10 orders to cancellation. Each cancelled order is lost revenue, so cutting cancellations is a direct revenue lever.
+##### Insight
+
+The business earned 12,420 from 27 delivered orders (460 per order), and loses 1 in 10 orders to cancellation. Each cancelled order is lost revenue, so cutting cancellations is a direct revenue lever.
 
 #### Q2. What is the monthly revenue and order count?
+
+##### Query
 
 ```sql
 select date_format(o.order_date, '%Y-%m') as month,
@@ -182,6 +219,8 @@ group by date_format(o.order_date, '%Y-%m')
 order by date_format(o.order_date, '%Y-%m');
 ```
 
+##### Result
+
 | month | monthly_revenue | monthly_order_count |
 |---|---|---|
 | 2026-01 | 1,750 | 4 |
@@ -191,11 +230,17 @@ order by date_format(o.order_date, '%Y-%m');
 | 2026-05 | 2,080 | 5 |
 | 2026-06 | 880 | 2 |
 
-**How it works:** `date_format(..., '%Y-%m')` converts each order date to a year-month label, so January 2026 and January 2027 never merge. The monthly rows add up to 12,420 and 27 orders, matching Q1.
+##### How it works
 
-**Insight:** February is the strongest month. March has the most orders (6) but lower revenue than February, so average order value dropped. June covers only 10 days, so its low figure reflects incomplete data.
+`date_format(..., '%Y-%m')` converts each order date to a year-month label, so January 2026 and January 2027 never merge. The monthly rows add up to 12,420 and 27 orders, matching Q1.
+
+##### Insight
+
+February is the strongest month. March has the most orders (6) but lower revenue than February, so average order value dropped. June covers only 10 days, so its low figure reflects incomplete data.
 
 #### Q3. Which payment method brings in the most revenue?
+
+##### Query
 
 ```sql
 select payment_method, sum(amount) as revenue, count(order_id) as transaction_count
@@ -204,20 +249,26 @@ group by payment_method
 order by revenue desc;
 ```
 
+##### Result
+
 | payment_method | revenue | transaction_count |
 |---|---|---|
 | upi | 6,070 | 16 |
 | card | 4,640 | 7 |
 | cash | 1,710 | 4 |
 
-**Insight:** UPI brings 48.9% of revenue and 59% of transactions. UPI cashback or offers would reach the largest share of customers. Cash is only 4 of 27 orders (about 15%), which means little cash-handling risk for delivery partners.
+##### Insight
+
+UPI brings 48.9% of revenue and 59% of transactions. UPI cashback or offers would reach the largest share of customers. Cash is only 4 of 27 orders (about 15%), which means little cash-handling risk for delivery partners.
 
 ### B. Restaurant and customer performance
 
 #### Q4. For each restaurant, what are the total orders, revenue and average delivery time?
 
+##### Query
+
 ```sql
-select 
+select
 	r.restaurant_name,r.restaurant_id, -- this works because of functional dependency exists btw id and name!!
 	count(o.order_id) as total_orders ,sum(p.amount) as total_revenue ,avg(o.delivery_time) as average_delivery_time
 from orders o
@@ -227,12 +278,21 @@ group by r.restaurant_id
 order by r.restaurant_id;
 ```
 
+##### Result
 
-**How it works:** three tables are joined, and each `on` condition links a parent to its child (`orders.restaurant_id` to `restaurants`, `payments.order_id` to `orders`). Selecting `restaurant_name` while grouping only by `restaurant_id` is valid in MySQL 8 because of functional dependency: the primary key fixes one name per group.
+<!-- Add screenshot: ![Q4 result](screenshots/q04_restaurant_performance.png) -->
 
-**Insight:** Biryani House leads with 4,290 (34.5% of revenue). Pizza Hub has the slowest deliveries (about 42 minutes) and Dosa Corner the fastest (about 25 minutes). Dosa Corner has as many orders as Pizza Hub but less than half its revenue, because its dishes are cheaper. Tandoori Tales is absent because it has no orders
+##### How it works
+
+Three tables are joined, and each `on` condition links a parent to its child (`orders.restaurant_id` to `restaurants`, `payments.order_id` to `orders`). Selecting `restaurant_name` while grouping only by `restaurant_id` is valid in MySQL 8 because of functional dependency: the primary key fixes one name per group.
+
+##### Insight
+
+Biryani House leads with 4,290 (34.5% of revenue). Pizza Hub has the slowest deliveries (about 42 minutes) and Dosa Corner the fastest (about 25 minutes). Dosa Corner has as many orders as Pizza Hub but less than half its revenue, because its dishes are cheaper. Tandoori Tales is absent because it has no orders.
 
 #### Q5. Which cuisine type generates the most revenue?
+
+##### Query
 
 ```sql
 select r.cusine_type,sum(p.amount) as cuisine_revenue
@@ -243,6 +303,8 @@ group by r.cusine_type
 order by cuisine_revenue desc;
 ```
 
+##### Result
+
 | cusine_type | cuisine_revenue |
 |---|---|
 | Indian | 6,980 |
@@ -251,9 +313,13 @@ order by cuisine_revenue desc;
 | South Indian | 830 |
 | Fast Food | 750 |
 
-**Insight:** Indian cuisine produces 56.2% of revenue, driven by Biryani House and Spice Garden. Here `cusine_type` is not unique to a restaurant, so it must appear in the `GROUP BY`. Fast Food is the smallest category, and its only active restaurant (Burger Barn) also has the worst cancellation rate (Q8).
+##### Insight
+
+Indian cuisine produces 56.2% of revenue, driven by Biryani House and Spice Garden. Here `cusine_type` is not unique to a restaurant, so it must appear in the `GROUP BY`. Fast Food is the smallest category, and its only active restaurant (Burger Barn) also has the worst cancellation rate (Q8).
 
 #### Q6. Which restaurants have received no orders, and which customers have never ordered?
+
+##### Query
 
 ```sql
 -- Restaurants with no orders
@@ -270,13 +336,21 @@ left join orders o on c.customer_id = o.customer_id
 where o.order_id is null;
 ```
 
+##### Result
 
-**How it works:** a `LEFT JOIN` keeps every row from the left table. Where there is no match, the right-side columns are NULL, so `where o.order_id is null` keeps only the unmatched rows. An inner join would hide these rows.
+<!-- Add screenshot: ![Q6 result](screenshots/q06_no_orders.png) -->
 
-**Insight:** Tandoori Tales (Guntur, rating 4.1) is listed but has not received a single order, so it needs visibility or promotion, or a check that it is active. Naveen Raju signed up on 30 December 2025 and never ordered, which suggests an onboarding nudge such as a first-order coupon.
+##### How it works
 
+A `LEFT JOIN` keeps every row from the left table. Where there is no match, the right-side columns are NULL, so `where o.order_id is null` keeps only the unmatched rows. An inner join would hide these rows.
+
+##### Insight
+
+Tandoori Tales (Guntur, rating 4.1) is listed but has not received a single order, so it needs visibility or promotion, or a check that it is active. Naveen Raju signed up on 30 December 2025 and never ordered, which suggests an onboarding nudge such as a first-order coupon.
 
 #### Q7. Show each order with customer, restaurant, items and amount paid
+
+##### Query
 
 ```sql
 select c.customer_name,
@@ -293,14 +367,23 @@ group by o.order_id, c.customer_name, r.restaurant_name, p.amount, o.order_date
 order by c.customer_name, o.order_id;
 ```
 
+##### Result
 
-**Result:** 27 rows, one per delivered order. For example, order 1009 shows Arjun Rao at Spice Garden with `Butter Naan, Dal Tadka` and an amount of 380.
+27 rows, one per delivered order. For example, order 1009 shows Arjun Rao at Spice Garden with `Butter Naan, Dal Tadka` and an amount of 380.
 
-**How it works:** joining to `order_items` produces one row per dish (34 rows for delivered orders), which is the wrong level of detail for "each order". Grouping by `o.order_id` collapses the dishes back to one row, and `group_concat` joins the dish names into a single text cell. The grain of the result (one row per order) was verified by checking the row count (27).
+<!-- Add screenshot: ![Q7 result](screenshots/q07_orders_with_items.png) -->
 
-**Insight:** only 7 of the 27 delivered orders (26%) contain more than one dish, and their average value (about 431) is below the overall average of 460. Most customers order a single dish, so suggesting sides and drinks at checkout is an easy way to increase order value.
+##### How it works
+
+Joining to `order_items` produces one row per dish (34 rows for delivered orders), which is the wrong level of detail for "each order". Grouping by `o.order_id` collapses the dishes back to one row, and `group_concat` joins the dish names into a single text cell. The grain of the result (one row per order) was verified by checking the row count (27).
+
+##### Insight
+
+Only 7 of the 27 delivered orders (26%) contain more than one dish, and their average value (about 431) is below the overall average of 460. Most customers order a single dish, so suggesting sides and drinks at checkout is an easy way to increase order value.
 
 #### Q8. Which restaurants have a cancellation rate above the overall rate?
+
+##### Query
 
 ```sql
 select r.restaurant_id, r.restaurant_name,
@@ -314,13 +397,23 @@ having avg(o.order_status = 'Cancelled') * 100 > (
 order by restaurant_cancellation_rate desc;
 ```
 
-**How it works:** `avg(condition)` gives the share of rows where the condition is true. The subquery returns the overall 10%, calculated once. `HAVING` is used because the rate only exists after grouping.
+##### Result
 
-**Insight:** Burger Barn cancelled 2 of its 4 orders (50%), five times the company average, which points to an operational issue such as stock-outs or slow order acceptance. Dragon Wok (1 of 3 orders) is also above average, but the sample is too small for a firm conclusion, so it should be monitored.
+<!-- Add screenshot: ![Q8 result](screenshots/q08_cancellation_by_restaurant.png) -->
+
+##### How it works
+
+`avg(condition)` gives the share of rows where the condition is true. The subquery returns the overall 10%, calculated once. `HAVING` is used because the rate only exists after grouping.
+
+##### Insight
+
+Burger Barn cancelled 2 of its 4 orders (50%), five times the company average, which points to an operational issue such as stock-outs or slow order acceptance. Dragon Wok (1 of 3 orders) is also above average, but the sample is too small for a firm conclusion, so it should be monitored.
 
 ### C. Above-Average Performers and Customer Loyalty
 
 #### Q9. Which customers spent more than the average customer spend?
+
+##### Query
 
 ```sql
 with avg_customer as (
@@ -337,13 +430,23 @@ having a.amount_spent > (select round(avg(amount_spent), 2) from avg_customer)
 order by a.amount_spent desc, c.customer_id;
 ```
 
-**How it works:** the CTE first builds one total per customer. The benchmark is the **average of those totals** (955.38), not the average order value (460). Comparing a customer's total with the per-order average was a mistake caught during development, because it returned 9 customers instead of 5.
+##### Result
 
-**Insight:** five of the 13 paying customers account for 8,330 of the 12,420 revenue (67%). Ravi Kumar alone contributes about 18%.
+<!-- Add screenshot: ![Q9 result](screenshots/q09_customers_above_average.png) -->
+
+##### How it works
+
+The CTE first builds one total per customer. The benchmark is the **average of those totals** (955.38), not the average order value (460). Comparing a customer's total with the per-order average was a mistake caught during development, because it returned 9 customers instead of 5.
 
 *Assumption:* the average covers the 13 customers who paid at least once. This is the ARPPU (average revenue per paying user) definition. Using all 15 registered customers would give 828, and the same five customers would qualify.
 
+##### Insight
+
+Five of the 13 paying customers account for 8,330 of the 12,420 revenue (67%). Ravi Kumar alone contributes about 18%.
+
 #### Q10. Which customers ordered from more than one restaurant?
+
+##### Query
 
 ```sql
 select c.customer_name, c.customer_id,
@@ -355,15 +458,23 @@ having count(distinct o.restaurant_id) > 1
 order by c.customer_id;
 ```
 
+##### Result
 
+<!-- Add screenshot: ![Q10 result](screenshots/q10_multi_restaurant_customers.png) -->
 
-**How it works:** `count(distinct restaurant_id)` counts each restaurant once per customer. Without `distinct`, Divya Teja (2 orders, both at Biryani House) would wrongly appear.
+##### How it works
 
-**Insight:** 6 of the 14 customers who placed an order tried two or more restaurants, so many customers are not loyal to a single restaurant. Platform-wide offers such as free delivery encourage them to keep ordering, while restaurant-specific loyalty deals suit the single-restaurant customers.
+`count(distinct restaurant_id)` counts each restaurant once per customer. Without `distinct`, Divya Teja (2 orders, both at Biryani House) would wrongly appear.
 
 *Assumption:* cancelled orders count as "ordered from". Excluding them keeps the same six customers.
 
+##### Insight
+
+6 of the 14 customers who placed an order tried two or more restaurants, so many customers are not loyal to a single restaurant. Platform-wide offers such as free delivery encourage them to keep ordering, while restaurant-specific loyalty deals suit the single-restaurant customers.
+
 #### Q11. Which restaurants earn more than the average restaurant revenue?
+
+##### Query
 
 ```sql
 with avg_restaurant as (
@@ -379,12 +490,21 @@ where a.revenue > (select avg(revenue) from avg_restaurant)
 order by a.revenue desc;
 ```
 
+##### Result
 
-**How it works:** the CTE gives one revenue row per restaurant, so the plain `where` filter is enough, and no `GROUP BY` is needed. The average (1,774.29) is the average of restaurant totals across the 7 restaurants with revenue.
+<!-- Add screenshot: ![Q11 result](screenshots/q11_restaurants_above_average.png) -->
 
-**Insight:** three of the seven active restaurants bring in 9,240 of the 12,420 revenue (about 74%). Revenue is concentrated in a few restaurants, which deserve priority for promotions and retention, while the other four could be reviewed for growth opportunities.
+##### How it works
+
+The CTE gives one revenue row per restaurant, so the plain `where` filter is enough, and no `GROUP BY` is needed. The average (1,774.29) is the average of restaurant totals across the 7 restaurants with revenue.
+
+##### Insight
+
+Three of the seven active restaurants bring in 9,240 of the 12,420 revenue (about 74%). Revenue is concentrated in a few restaurants, which deserve priority for promotions and retention, while the other four could be reviewed for growth opportunities.
 
 #### Q12. What percentage of customers ordered more than once (repeat rate)?
+
+##### Query
 
 ```sql
 -- Repeat rate = customers with 2+ delivered orders / customers with at least 1 delivered order
@@ -398,22 +518,33 @@ select (sum(if(repeat_count > 1, 1, 0)) / count(*)) * 100 as repeat_rate
 from repeat_customers;
 ```
 
-**Result:** 8 repeat customers out of 13, a repeat rate of **61.54%**.
+##### Result
 
-**How it works:** the `WHERE` filter sits inside the CTE, so customers whose only order was cancelled (Suresh Yadav) never get a row and are not in the denominator. Moving the delivered rule into an `IF` in the outer query would have kept him in the denominator and given a different answer (14 customers, 64.29%). `WHERE` decides which rows exist, while `IF` only changes what a row contributes.
+8 repeat customers out of 13, a repeat rate of **61.54%**.
 
-**Insight:** about 62% of paying customers come back. The five customers who ordered only once (Priya Sharma, Mahesh Varma, Rahul Chowdary, Vamsi Krishna and Pooja Singh) are the target for a second-order coupon. Combined with the activation rate (13 of 15 registered customers placed a delivered order, 86.67%), the funnel is 15 registered, 13 paying, 8 repeat.
+##### How it works
+
+The `WHERE` filter sits inside the CTE, so customers whose only order was cancelled (Suresh Yadav) never get a row and are not in the denominator. Moving the delivered rule into an `IF` in the outer query would have kept him in the denominator and given a different answer (14 customers, 64.29%). `WHERE` decides which rows exist, while `IF` only changes what a row contributes.
+
+##### Insight
+
+About 62% of paying customers come back. The five customers who ordered only once (Priya Sharma, Mahesh Varma, Rahul Chowdary, Vamsi Krishna and Pooja Singh) are the target for a second-order coupon. Combined with the activation rate (13 of 15 registered customers placed a delivered order, 86.67%), the funnel is 15 registered, 13 paying, 8 repeat.
 
 ### D. Customer segmentation
 
 #### Q13. Segment customers into High, Medium and Low value and show each segment's share of revenue
 
-**Thresholds (data-driven, so they scale as the data grows):**
+##### Thresholds
+
+Data-driven, so they scale as the data grows:
+
 - **High:** total spend at least 1.5 times the average customer spend
 - **Medium:** total spend at least the average, but below High
 - **Low:** below the average
 
 *Why not fixed numbers or "% of total revenue"?* Fixed amounts stop making sense as the data grows, and a customer's share of total revenue shrinks as the customer base grows, so everyone would end up in "Low". Multiples of the average adapt automatically.
+
+##### Query
 
 ```sql
 with customer_spend as (
@@ -454,18 +585,26 @@ group by customer_category
 order by field(customer_category, 'High', 'Medium', 'Low');
 ```
 
+##### Result
 
-**How it works**
+<!-- Add screenshot: ![Q13 result](screenshots/q13_customer_segments.png) -->
+
+##### How it works
+
 - `avg(sum(p.amount)) over ()`: `GROUP BY` first creates one total per customer, then the window function averages those totals (955.38) without a separate query. The empty `over ()` means the whole result is one window.
 - `CASE` checks branches top to bottom and stops at the first match, so the strictest condition (High) comes first.
 - `sum(...) over ()` keeps every row and repeats the grand total (12,420) on each, so each row can divide its own value by it. At segment level, the nested `sum(sum(...)) over ()` is needed because a `GROUP BY` is present.
 - Two CTEs are used because the segment label only exists after customer totals do, and the segment summary groups on that label.
 
-**Insight:** four of the 13 paying customers (31%) bring in nearly 58% of revenue, while the eight Low customers contribute 33%. The middle group is thin, so the business depends on a few high spenders. A loyalty offer for the High group protects most of the income, and a second-order coupon could move Low customers upward.
+##### Insight
+
+Four of the 13 paying customers (31%) bring in nearly 58% of revenue, while the eight Low customers contribute 33%. The middle group is thin, so the business depends on a few high spenders. A loyalty offer for the High group protects most of the income, and a second-order coupon could move Low customers upward.
 
 ### E. Rankings and Trends Over Time
 
 #### Q14. Rank restaurants by revenue within each city
+
+##### Query
 
 ```sql
 with restaurant_revenues as (
@@ -483,15 +622,23 @@ join restaurants r on r.restaurant_id = rr.restaurant_id
 order by r.city, city_rank;
 ```
 
+##### Result
 
+<!-- Add screenshot: ![Q14 result](screenshots/q14_rank_by_city.png) -->
 
-**How it works:** `partition by r.city` restarts the ranking inside each city, and `order by ... desc` puts the highest revenue first. Without `partition by`, the query would produce one ranking across all cities. `rank()` leaves gaps after ties, while `dense_rank()` does not. There are no ties in this data, so both give the same result.
+##### How it works
+
+`partition by r.city` restarts the ranking inside each city, and `order by ... desc` puts the highest revenue first. Without `partition by`, the query would produce one ranking across all cities. `rank()` leaves gaps after ties, while `dense_rank()` does not. There are no ties in this data, so both give the same result.
 
 > **Note:** the earlier version of this query used `dense_rank() over (order by ...)` without `partition by`, which ranks across all restaurants and not within each city. The version above fixes that.
 
-**Insight:** Biryani House (Hyderabad) and Spice Garden (Vijayawada) are the clear leaders in their cities. Burger Barn is Guntur's only active restaurant, and its top rank there reflects no competition, not strong performance (it has the worst cancellation rate). Guntur needs more active restaurants, since Tandoori Tales has no orders.
+##### Insight
+
+Biryani House (Hyderabad) and Spice Garden (Vijayawada) are the clear leaders in their cities. Burger Barn is Guntur's only active restaurant, and its top rank there reflects no competition, not strong performance (it has the worst cancellation rate). Guntur needs more active restaurants, since Tandoori Tales has no orders.
 
 #### Q15. What is the month-over-month revenue growth percentage?
+
+##### Query
 
 ```sql
 select *,
@@ -507,27 +654,172 @@ from (
 ) as revenue_table;
 ```
 
+##### Result
 
-**How it works**
+<!-- Add screenshot: ![Q15 result](screenshots/q15_monthly_growth.png) -->
+
+##### How it works
+
 - Formula: `(this month - last month) / last month x 100`. The divisor is the previous month, not the grand total.
 - `lag(...)` brings the previous row's value onto the current row, and `order by` inside `over()` defines what "previous" means.
 - `lag(sum(...))` works because window functions run after `GROUP BY`, so they can wrap an aggregate.
 - `nullif(previous, 0)` returns NULL instead of a division error if a month had zero revenue.
 - January has no previous month, so its growth is NULL.
 
-**Insight:** revenue grew 54.29% from January to February, then fell in March (-8.89%), stayed roughly flat in April (+3.66%), and declined again in May (-18.43%). June's -57.69% is not a real decline, because the data ends on 10 June and the month is incomplete. The March to May slowdown is worth investigating for seasonality or reduced promotions.
+##### Insight
+
+Revenue grew 54.29% from January to February, then fell in March (-8.89%), stayed roughly flat in April (+3.66%), and declined again in May (-18.43%). June's -57.69% is not a real decline, because the data ends on 10 June and the month is incomplete. The March to May slowdown is worth investigating for seasonality or reduced promotions.
+
+#### Q16. What is the cumulative (running) revenue by date?
+
+##### Query
+
+```sql
+-- Cumulative (running) revenue by date (delivered orders only)
+select date(o.order_date) as order_day,
+       sum(p.amount) as each_day_revenue,   -- one day can have several orders, so they are summed
+       sum(sum(p.amount)) over (order by date(o.order_date)) as running_revenue
+from payments p
+inner join orders o on p.order_id = o.order_id
+group by date(o.order_date)
+order by order_day;
+```
+
+##### Result
+
+27 rows (every delivered order falls on a different date). The first row, the last row and a few checkpoints:
+
+| order_day | each_day_revenue | running_revenue |
+|---|---|---|
+| 2026-01-05 | 420 | 420 |
+| 2026-01-28 | 450 | 1,750 |
+| 2026-02-25 | 760 | 4,450 |
+| 2026-03-27 | 420 | 6,910 |
+| 2026-04-24 | 360 | 9,460 |
+| 2026-05-25 | 500 | 11,540 |
+| 2026-06-10 | 600 | **12,420** |
+
+##### How it works
+
+- `group by date(o.order_date)` makes one row per **day**. `order_date` is a datetime, so grouping by the raw column would give one row per timestamp, and two orders on the same day would not be combined.
+- The inner `sum(p.amount)` is that day's revenue. The outer `sum(...) over (order by ...)` adds the daily totals in date order, so every row shows the total up to that date.
+- Window functions run after `GROUP BY`, which is why a window function can wrap an aggregate.
+- Cross-checks: the running total at the end of January (1,750) equals January's revenue in Q2, and the final value (12,420) equals total revenue in Q1.
+
+##### Insight
+
+Revenue builds steadily. About 4,450 (36%) is reached by the end of February and about 9,460 (76%) by the end of April, and the curve flattens in June because the data ends on 10 June. Daily revenue is uneven, since most days have no orders, so the running total shows the real trend better than individual days.
+
+#### Q17. What is the order sequence and the days between orders, per customer?
+
+##### Query
+
+```sql
+-- Order sequence and days between orders, per customer
+-- Only delivered orders count, because a cancelled order is not a real purchase.
+select c.customer_id,
+       c.customer_name,
+       o.order_id,
+       o.order_date,
+       lag(o.order_date) over w as previous_order_date,
+       row_number() over w as order_sequence,
+       datediff(o.order_date, lag(o.order_date) over w) as days_since_previous_order
+from orders o
+inner join customers c on o.customer_id = c.customer_id
+where o.order_status = 'Delivered'
+window w as (partition by o.customer_id order by o.order_date, o.order_id)
+order by o.customer_id, order_sequence;
+```
+
+##### Result
+
+27 rows, one per delivered order. A sample:
+
+| customer_name | order_id | order_sequence | days_since_previous_order |
+|---|---|---|---|
+| Ravi Kumar | 1001 | 1 | NULL |
+| Ravi Kumar | 1003 | 2 | 10 |
+| Ravi Kumar | 1008 | 3 | 30 |
+| Ravi Kumar | 1020 | 4 | 53 |
+| Ravi Kumar | 1030 | 5 | 63 |
+| Sneha Reddy | 1002 | 1 | NULL |
+| Sneha Reddy | 1007 | 2 | 34 |
+| Sneha Reddy | 1022 | 3 | 67 |
+| Arjun Rao | 1009 | 1 | NULL |
+| Arjun Rao | 1027 | 2 | 88 |
+
+##### How it works
+
+- `partition by o.customer_id` restarts the numbering and the gap for every customer, so each customer has their own timeline.
+- `order by o.order_date, o.order_id` sorts each customer's orders in time, and the order ID is a tie-breaker for orders with the same timestamp.
+- `row_number() over w` numbers the orders 1, 2, 3. `lag(o.order_date) over w` reads the previous order's date onto the current row, and `datediff` turns the two dates into days.
+- A customer's first order has no previous order, so its gap is NULL (not 0).
+- The window is defined once (`window w as (...)`) and reused, so the three columns always use identical rules.
+- The delivered-only rule sits in `where`, so Priya Sharma's cancelled order does not create a "2nd order", and customers 9 and 15 do not appear.
+
+##### Insight
+
+Eight of the 13 paying customers ordered more than once, which gives 14 gaps with an average of about 50 days. A new customer takes about 43 days on average to place a second order, so a reminder or coupon at about 30 days would arrive before the usual return. Gaps tend to widen over time (Ravi: 10, 30, 53, 63; Kiran Babu: 22, 66; Anitha Devi: 20, 74), which suggests customers slowly cool off. The five customers with only one order (Priya Sharma, Mahesh Varma, Rahul Chowdary, Vamsi Krishna and Pooja Singh) are the first to target.
+
+#### Q18. How does each order compare with its restaurant's average order amount?
+
+##### Query
+
+```sql
+-- Each order's amount against its restaurant's average order amount (delivered orders only)
+-- "Above average" means strictly greater than the restaurant's average.
+select o.order_id,
+       o.restaurant_id,
+       r.restaurant_name,
+       p.amount as order_amount,
+       round(avg(p.amount) over w, 2) as restaurant_average,
+       if(p.amount > (avg(p.amount) over w), 'Yes', 'No') as above_average
+from orders o
+inner join payments p    on o.order_id = p.order_id
+inner join restaurants r on o.restaurant_id = r.restaurant_id
+window w as (partition by o.restaurant_id)
+order by restaurant_average desc, restaurant_name;
+```
+
+##### Result
+
+27 rows (one per delivered order), with 11 marked `Yes`. Summary by restaurant:
+
+| restaurant_name | restaurant_average | Orders above average |
+|---|---|---|
+| Biryani House | 612.86 | 1007, 1016, 1021 |
+| Pizza Hub | 565.00 | 1010, 1019 |
+| Dragon Wok | 460.00 | 1024 |
+| Spice Garden | 448.33 | 1022, 1030 |
+| Burger Barn | 375.00 | 1005 |
+| Noodle Bar | 340.00 | 1023 |
+| Dosa Corner | 207.50 | 1020 |
+
+##### How it works
+
+- There is no `GROUP BY`, so every order keeps its own row. A `GROUP BY` would collapse the orders into one row per restaurant.
+- `avg(p.amount) over w` with `partition by o.restaurant_id` calculates each restaurant's average and repeats it on every row of that restaurant.
+- `if(amount > average, 'Yes', 'No')` flags orders above their own restaurant's average. Each order is compared with its own restaurant and not with the company-wide average (460), which would be unfair across restaurants. For example, Dosa Corner's order 1020 (270) is below the company average but above its own restaurant's average.
+- Each delivered order has exactly one payment row, so `p.amount` is the order amount and no `SUM` is needed.
+
+##### Insight
+
+11 of the 27 delivered orders (41%) are above their restaurant's average and bring in 6,670 of the 12,420 revenue (about 54%), so a minority of large orders drives most of the income. Average order size varies almost threefold between restaurants (Biryani House 613 vs Dosa Corner 208), so promotions and free-delivery thresholds should be set per restaurant and not company-wide. Low-average restaurants such as Dosa Corner are the best targets for add-on and combo offers.
 
 ---
 
-## 8. Assumptions and Known Limitations
+## 7. Assumptions and Known Limitations
 
-**Assumptions**
+### 7.1 Assumptions
+
 - Revenue and averages use **delivered orders only**.
 - "Average customer spend" uses customers with at least one paid order (13), the ARPPU definition.
 - Repeat rate uses delivered orders only, among customers with at least one delivered order (13).
 - Cancelled orders are counted in the "ordered from more than one restaurant" question (Q10).
+- Order sequence and gaps (Q17) use delivered orders only. "Above average" in Q18 means strictly greater than the restaurant's average.
 
-**Limitations**
+### 7.2 Limitations
+
 - Small sample dataset (30 orders over 5 months), so patterns are illustrative and not statistically strong.
 - June 2026 is incomplete (data ends on 10 June).
 - `order_status` is not restricted by a constraint, so values must be typed consistently (`Delivered` or `Cancelled`).
@@ -536,7 +828,9 @@ from (
 
 ---
 
-## 9. Project Structure and How to Run
+## 8. Project Structure and How to Run
+
+### 8.1 Folder Structure
 
 ```
 Project-1/
@@ -544,41 +838,43 @@ Project-1/
 ├── er_diagram.png             # database ER diagram
 ├── Schema.sql                 # creates the database and tables
 ├── Data.sql                   # inserts the sample data
-├── analysis_queries.sql       # all analysis queries 
+├── analysis_queries.sql       # all analysis queries (Q1 to Q18)
 └── screenshots/               # screenshots of query results
 ```
 
+### 8.2 File Descriptions
+
 | File | Purpose |
 |---|---|
-| `schema.sql` | Creates the `analysis` database and the five tables in dependency order (customers, restaurants, orders, order_items, payments) |
-| `data.sql` | Loads the sample data: 15 customers, 8 restaurants, 30 orders, 37 order items, 27 payments |
+| `Schema.sql` | Creates the `analysis` database and the five tables in dependency order (customers, restaurants, orders, order_items, payments) |
+| `Data.sql` | Loads the sample data: 15 customers, 8 restaurants, 30 orders, 37 order items, 27 payments |
 | `analysis_queries.sql` | Validation check and all business queries, grouped by topic |
 | `er_diagram.png` | ER diagram exported from MySQL Workbench |
 | `screenshots/` | Result screenshots for the key queries |
 
-**To run**
+### 8.3 How to Run
+
 1. Open MySQL Workbench (MySQL 8.0 or later is required for CTEs and window functions).
-2. Run `schema.sql`.
-3. Run `data.sql`. Expected row counts: 15, 8, 30, 37 and 27.
+2. Run `Schema.sql`.
+3. Run `Data.sql`. Expected row counts: 15, 8, 30, 37 and 27.
 4. Run the validation query from section 5 and confirm it returns `0`.
 5. Run the queries in `analysis_queries.sql` one at a time and compare the output with the results in this README.
 
 ---
-## 10. Next Steps
 
-**Still to add**
-- Cumulative (running) revenue by date
-- Order sequence per customer and days between consecutive orders
-- Each order's amount against its restaurant's average, with a flag
+## 9. Next Steps
 
-**Stretch analyses**
+### 9.1 Stretch Analyses
+
 - Month-to-month customer retention rate
 - Churn risk (no order in the last 30 days of the dataset)
+- Restaurants with delivery times consistently above average
 - Top 2 revenue-generating items per restaurant
 - Share of revenue from the top 20% of customers
 - 3-month moving average of revenue
 
-**Improvements**
+### 9.2 Improvements
+
 - Load a larger dataset (500+ orders) to make rankings and trends more meaningful
 - Add a `menu_items` table linked to restaurants
 - Add constraints for `order_status` and a unique `payments.order_id`
