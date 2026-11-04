@@ -217,6 +217,20 @@ from payments p
 inner join orders o on p.order_id=o.order_id
 group by o.order_date;
 
+-- Order sequence and days between orders, per customer
+select 
+	c.customer_id,
+	c.customer_name,
+    o.order_id,
+	o.order_date,
+    lag(o.order_date) over w as previous_order_date,
+    row_number() over w as order_sequence,
+    datediff(o.order_date, lag(o.order_date) over w) as days_since_previous_order
+from orders o
+inner join customers c on o.customer_id=c.customer_id
+where o.order_status='Delivered'
+window w as (partition by o.customer_id order by o.order_date,o.order_id)
+order by o.customer_id, order_sequence;
 
     
 
